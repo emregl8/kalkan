@@ -8,6 +8,7 @@ from gi.repository import Gtk, GLib
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, install_pkg
+from core.priv import sudo_read
 
 CRYPTTAB = "/etc/crypttab"
 
@@ -15,22 +16,22 @@ CRYPTTAB = "/etc/crypttab"
 def _get_luks_devices() -> list[str]:
     devices = []
     try:
-        with open(CRYPTTAB) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                dev = parts[1]
-                if dev.startswith("UUID="):
-                    r = subprocess.run(["blkid", "-U", dev[5:]], capture_output=True, text=True)
-                    if r.returncode == 0 and r.stdout.strip():
-                        devices.append(r.stdout.strip())
-                elif os.path.exists(dev):
-                    devices.append(dev)
-    except OSError:
+        content = sudo_read(CRYPTTAB)
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            dev = parts[1]
+            if dev.startswith("UUID="):
+                r = subprocess.run(["blkid", "-U", dev[5:]], capture_output=True, text=True)
+                if r.returncode == 0 and r.stdout.strip():
+                    devices.append(r.stdout.strip())
+            elif os.path.exists(dev):
+                devices.append(dev)
+    except Exception:
         pass
     return devices
 
