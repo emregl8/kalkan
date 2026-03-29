@@ -4,6 +4,7 @@ from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
 from core.backup import ensure_backup
+from core.priv import sudo_write, sudo_chown, sudo_chmod
 
 UPGRADES_CONF = "/etc/apt/apt.conf.d/50unattended-upgrades"
 AUTO_UPGRADES_CONF = "/etc/apt/apt.conf.d/20auto-upgrades"
@@ -26,10 +27,9 @@ APT::Periodic::AutocleanInterval "7";
 
 
 def _write_conf(path: str, content: str):
-    with open(path, "w") as f:
-        f.write(content)
-    os.chown(path, 0, 0)
-    os.chmod(path, 0o644)
+    sudo_write(path, content)
+    sudo_chown(path, 0, 0)
+    sudo_chmod(path, 0o644)
 
 
 class UnattendedUpgradesModule(SecurityModule):
@@ -61,7 +61,7 @@ class UnattendedUpgradesModule(SecurityModule):
         _write_conf(UPGRADES_CONF, _UPGRADES_CONTENT)
         _write_conf(AUTO_UPGRADES_CONF, _AUTO_UPGRADES_CONTENT)
         subprocess.run(
-            ["systemctl", "enable", "--now", "unattended-upgrades"],
+            ["sudo", "systemctl", "enable", "--now", "unattended-upgrades"],
             check=True, capture_output=True,
         )
         detail = "Configured and service enabled"

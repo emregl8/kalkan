@@ -1,8 +1,8 @@
 import os
 from datetime import datetime
-from core.config import REPO_DIR
 
-LOG_FILE = os.path.join(REPO_DIR, "kalkan.log")
+LOG_FILE = os.path.join(os.path.expanduser("~"), ".local", "share", "kalkan", "kalkan.log")
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 
 def init_log() -> None:

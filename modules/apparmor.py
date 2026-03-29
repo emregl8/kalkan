@@ -1,11 +1,11 @@
 import json
 import os
-import shutil
 import subprocess
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
 from core.backup import ensure_backup
+from core.priv import sudo_copy, sudo_chown, sudo_chmod
 from core.config import APPARMOR_PROFILES_DIR
 
 APPARMOR_D = "/etc/apparmor.d"
@@ -13,7 +13,7 @@ PACKAGES = ["apparmor", "apparmor-utils", "apparmor-profiles", "apparmor-profile
 
 
 def _aa_profile_modes() -> dict[str, str]:
-    r = subprocess.run(["aa-status", "--json"], capture_output=True, text=True)
+    r = subprocess.run(["sudo", "aa-status", "--json"], capture_output=True, text=True)
     if r.returncode != 0:
         return {}
     return json.loads(r.stdout).get("profiles", {})
@@ -66,10 +66,10 @@ class AppArmorModule(SecurityModule):
 
     def apply(self) -> ApplyResult:
         installed = install_pkg(*PACKAGES)
-        subprocess.run(["systemctl", "enable", "--now", "apparmor"], check=True, capture_output=True)
+        subprocess.run(["sudo", "systemctl", "enable", "--now", "apparmor"], check=True, capture_output=True)
 
         for profile in self._system_enforced:
-            subprocess.run(["aa-enforce", profile], capture_output=True)
+            subprocess.run(["sudo", "aa-enforce", profile], capture_output=True)
 
         for profile in self._selected:
             src = os.path.join(APPARMOR_PROFILES_DIR, profile)
@@ -77,10 +77,10 @@ class AppArmorModule(SecurityModule):
                 raise FileNotFoundError(f"Custom profile not found: {src}")
             dest = os.path.join(APPARMOR_D, profile)
             ensure_backup(dest)
-            shutil.copy2(src, dest)
-            os.chown(dest, 0, 0)
-            os.chmod(dest, 0o644)
-            subprocess.run(["aa-enforce", dest], check=True, capture_output=True)
+            sudo_copy(src, dest)
+            sudo_chown(dest, 0, 0)
+            sudo_chmod(dest, 0o644)
+            subprocess.run(["sudo", "aa-enforce", dest], check=True, capture_output=True)
 
         custom_detail = ", ".join(self._selected) if self._selected else "none"
         detail = f"System: {len(self._system_enforced)} profiles re-enforced, custom: {custom_detail}"

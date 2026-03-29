@@ -1,9 +1,9 @@
-import os
 import subprocess
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
 from core.backup import ensure_backup
+from core.priv import sudo_exists, sudo_file_nonempty, sudo_write, sudo_chown, sudo_chmod, sudo_read
 
 RULES_FILE = "/etc/usbguard/rules.conf"
 
@@ -17,7 +17,7 @@ class USBGuardModule(SecurityModule):
         if not pkg_installed("usbguard"):
             return ScanResult(ModuleStatus.NOT_APPLIED, "Package not installed")
 
-        if not os.path.exists(RULES_FILE) or os.path.getsize(RULES_FILE) == 0:
+        if not sudo_file_nonempty(RULES_FILE):
             return ScanResult(ModuleStatus.PARTIAL, "Installed but no policy generated")
 
         if not service_active("usbguard"):
@@ -30,16 +30,15 @@ class USBGuardModule(SecurityModule):
         ensure_backup(RULES_FILE)
 
         result = subprocess.run(
-            ["usbguard", "generate-policy"],
+            ["sudo", "usbguard", "generate-policy"],
             capture_output=True, text=True, check=True,
         )
-        with open(RULES_FILE, "w") as f:
-            f.write(result.stdout)
-        os.chown(RULES_FILE, 0, 0)
-        os.chmod(RULES_FILE, 0o600)
+        sudo_write(RULES_FILE, result.stdout)
+        sudo_chown(RULES_FILE, 0, 0)
+        sudo_chmod(RULES_FILE, 0o600)
 
         subprocess.run(
-            ["systemctl", "enable", "--now", "usbguard"],
+            ["sudo", "systemctl", "enable", "--now", "usbguard"],
             check=True, capture_output=True,
         )
         detail = "Policy generated from current devices, service enabled"
@@ -48,10 +47,9 @@ class USBGuardModule(SecurityModule):
         return ApplyResult(True, detail)
 
     def detail_info(self) -> str | None:
-        if not os.path.exists(RULES_FILE):
+        if not sudo_exists(RULES_FILE):
             return "No rules file found."
-        with open(RULES_FILE) as f:
-            content = f.read().strip()
+        content = sudo_read(RULES_FILE).strip()
         return content or "Rules file is empty."
 
     def verify(self) -> ScanResult:

@@ -1,9 +1,9 @@
 import json
 import os
-import shutil
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.backup import ensure_backup
+from core.priv import sudo_makedirs, sudo_copy, sudo_chown, sudo_chmod
 from core.config import FIREFOX_POLICY_SRC
 
 POLICY_DIR = "/etc/firefox-esr/policies"
@@ -38,11 +38,11 @@ class FirefoxPolicyModule(SecurityModule):
             return ScanResult(ModuleStatus.ERROR, str(e))
 
     def apply(self) -> ApplyResult:
-        os.makedirs(POLICY_DIR, exist_ok=True)
+        sudo_makedirs(POLICY_DIR)
         ensure_backup(POLICY_FILE)
-        shutil.copy2(FIREFOX_POLICY_SRC, POLICY_FILE)
-        os.chown(POLICY_FILE, 0, 0)
-        os.chmod(POLICY_FILE, 0o644)
+        sudo_copy(FIREFOX_POLICY_SRC, POLICY_FILE)
+        sudo_chown(POLICY_FILE, 0, 0)
+        sudo_chmod(POLICY_FILE, 0o644)
         return ApplyResult(True, f"Policy deployed to {POLICY_FILE}")
 
     def verify(self) -> ScanResult:

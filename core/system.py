@@ -22,7 +22,7 @@ def install_pkg(*packages: str) -> list[str]:
     for pkg in packages:
         if not pkg_installed(pkg):
             subprocess.run(
-                ["apt-get", "install", "-y", "-q", pkg],
+                ["sudo", "apt-get", "install", "-y", "-q", pkg],
                 check=True,
             )
             installed.append(pkg)

@@ -50,7 +50,7 @@ class UFWModule(SecurityModule):
         if not pkg_installed("ufw"):
             return ScanResult(ModuleStatus.NOT_APPLIED, "Package not installed")
 
-        r = subprocess.run(["ufw", "status"], capture_output=True, text=True)
+        r = subprocess.run(["sudo", "ufw", "status"], capture_output=True, text=True)
         if "Status: active" not in r.stdout:
             return ScanResult(ModuleStatus.PARTIAL, "Installed but inactive")
 
@@ -63,21 +63,21 @@ class UFWModule(SecurityModule):
         return ScanResult(ModuleStatus.APPLIED, "Active, click to view rules")
 
     def detail_info(self) -> str | None:
-        r = subprocess.run(["ufw", "status", "numbered"], capture_output=True, text=True)
+        r = subprocess.run(["sudo", "ufw", "status", "numbered"], capture_output=True, text=True)
         return r.stdout.strip() if r.returncode == 0 else None
 
     def apply(self) -> ApplyResult:
         installed = install_pkg("ufw")
-        subprocess.run(["ufw", "--force", "reset"], check=True, capture_output=True)
-        subprocess.run(["ufw", "default", "deny", "incoming"], check=True, capture_output=True)
-        subprocess.run(["ufw", "default", "allow", "outgoing"], check=True, capture_output=True)
-        subprocess.run(["ufw", "default", "deny", "forward"], check=True, capture_output=True)
+        subprocess.run(["sudo", "ufw", "--force", "reset"], check=True, capture_output=True)
+        subprocess.run(["sudo", "ufw", "default", "deny", "incoming"], check=True, capture_output=True)
+        subprocess.run(["sudo", "ufw", "default", "allow", "outgoing"], check=True, capture_output=True)
+        subprocess.run(["sudo", "ufw", "default", "deny", "forward"], check=True, capture_output=True)
 
         for name in self._selected_ports:
             port = _COMMON_PORTS[name]
-            subprocess.run(["ufw", "allow", port], check=True, capture_output=True)
+            subprocess.run(["sudo", "ufw", "allow", port], check=True, capture_output=True)
 
-        subprocess.run(["ufw", "--force", "enable"], check=True, capture_output=True)
+        subprocess.run(["sudo", "ufw", "--force", "enable"], check=True, capture_output=True)
 
         opened = ", ".join(self._selected_ports) if self._selected_ports else "none"
         detail = f"Configured and enabled, allowed: {opened}"

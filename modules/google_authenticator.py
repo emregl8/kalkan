@@ -4,6 +4,8 @@ from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, install_pkg
 from core.backup import ensure_backup
+from core.priv import (sudo_exists, sudo_read, sudo_write, sudo_chown,
+                       sudo_chmod, sudo_makedirs, sudo_remove)
 
 GA_DIR = "/etc/google-authenticator"
 PAM_FILE = "/etc/pam.d/common-auth"
@@ -13,7 +15,7 @@ PACKAGES = ["libpam-google-authenticator", "qrencode"]
 
 
 def _target_user() -> str:
-    return os.environ.get("SUDO_USER") or "root"
+    return os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
 
 
 class GoogleAuthenticatorModule(SecurityModule):
@@ -28,12 +30,11 @@ class GoogleAuthenticatorModule(SecurityModule):
         user = _target_user()
         secret_file = os.path.join(GA_DIR, user)
 
-        if not os.path.exists(secret_file):
+        if not sudo_exists(secret_file):
             return ScanResult(ModuleStatus.PARTIAL, f"Installed but no secret for {user}")
 
-        with open(PAM_FILE) as f:
-            if "pam_google_authenticator.so" not in f.read():
-                return ScanResult(ModuleStatus.PARTIAL, "Secret exists but PAM not configured")
+        if "pam_google_authenticator.so" not in sudo_read(PAM_FILE):
+            return ScanResult(ModuleStatus.PARTIAL, "Secret exists but PAM not configured")
 
         return ScanResult(ModuleStatus.APPLIED, f"2FA active for {user}")
 
@@ -42,46 +43,42 @@ class GoogleAuthenticatorModule(SecurityModule):
         user = _target_user()
         secret_file = os.path.join(GA_DIR, user)
 
-        os.makedirs(GA_DIR, mode=0o700, exist_ok=True)
-        os.chown(GA_DIR, 0, 0)
+        sudo_makedirs(GA_DIR, 0o700)
+        sudo_chown(GA_DIR, 0, 0)
 
         subprocess.run([
-            "google-authenticator",
+            "sudo", "google-authenticator",
             "--time-based", "--disallow-reuse", "--force",
             "--window-size=3", "--rate-limit=3", "--rate-time=30",
             "--emergency-codes=5",
             f"--secret={secret_file}",
         ], check=True, capture_output=True)
 
-        os.chown(secret_file, 0, 0)
-        os.chmod(secret_file, 0o400)
+        sudo_chown(secret_file, 0, 0)
+        sudo_chmod(secret_file, 0o400)
 
         ensure_backup(PAM_FILE)
-        with open(PAM_FILE) as f:
-            content = f.read()
-        if "pam_google_authenticator.so" not in content:
-            with open(PAM_FILE, "a") as f:
-                f.write(f"\n{PAM_LINE}\n")
+        pam_content = sudo_read(PAM_FILE)
+        if "pam_google_authenticator.so" not in pam_content:
+            sudo_write(PAM_FILE, pam_content + f"\n{PAM_LINE}\n")
 
-        os.makedirs("/etc/ssh/sshd_config.d", exist_ok=True)
+        sudo_makedirs("/etc/ssh/sshd_config.d")
         ensure_backup(SSHD_DROPIN)
-        with open(SSHD_DROPIN, "w") as f:
-            f.write(
-                "KbdInteractiveAuthentication yes\n"
-                "UsePAM yes\n"
-                "AuthenticationMethods publickey,keyboard-interactive keyboard-interactive\n"
-            )
-        os.chown(SSHD_DROPIN, 0, 0)
-        os.chmod(SSHD_DROPIN, 0o644)
+        sudo_write(SSHD_DROPIN,
+                   "KbdInteractiveAuthentication yes\n"
+                   "UsePAM yes\n"
+                   "AuthenticationMethods publickey,keyboard-interactive keyboard-interactive\n")
+        sudo_chown(SSHD_DROPIN, 0, 0)
+        sudo_chmod(SSHD_DROPIN, 0o644)
 
-        r = subprocess.run(["sshd", "-t"], capture_output=True)
+        r = subprocess.run(["sudo", "sshd", "-t"], capture_output=True)
         if r.returncode != 0:
-            os.remove(SSHD_DROPIN)
+            sudo_remove(SSHD_DROPIN)
             raise RuntimeError("Invalid SSHD config — dropin reverted")
 
-        subprocess.run(["systemctl", "restart", "ssh"], check=True, capture_output=True)
+        subprocess.run(["sudo", "systemctl", "restart", "ssh"], check=True, capture_output=True)
 
-        secret_key = open(secret_file).readline().strip()
+        secret_key = sudo_read(secret_file).split('\n')[0].strip()
         qr_file = f"/tmp/kalkan-2fa-{user}.png"
         subprocess.run([
             "qrencode", "-o", qr_file, "-s", "6",
