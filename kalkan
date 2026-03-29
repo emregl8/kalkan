@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+if os.geteuid() != 0:
+    sys.exit("This application requires root privileges.\nRun with: sudo kalkan")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+from core.logger import init_log
+from gui.app import KalkanApp
+
+init_log()
+
+sys.exit(KalkanApp().run(sys.argv))
