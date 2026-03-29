@@ -113,15 +113,18 @@ class TPMUnlockModule(SecurityModule):
         return ScanResult(ModuleStatus.APPLIED, f"TPM2 enrolled for {', '.join(enrolled)}")
 
     def apply(self) -> ApplyResult:
+        if not _tpm2_available():
+            return ApplyResult(False, "No TPM2 device found on this system")
+
         devices = _get_luks_devices()
         if not devices:
-            raise RuntimeError("No LUKS devices found in /etc/crypttab")
+            return ApplyResult(False, "No LUKS devices found in /etc/crypttab")
 
         install_pkg("tpm2-tools")
 
         passphrase = _ask_passphrase()
         if passphrase is None:
-            raise RuntimeError("Cancelled by user")
+            return ApplyResult(False, "Cancelled by user")
 
         enrolled = []
         for dev in devices:

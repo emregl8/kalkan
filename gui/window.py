@@ -158,7 +158,10 @@ class MainWindow(Gtk.ApplicationWindow):
             for row in selected:
                 try:
                     result = row.module.apply()
-                    log(f"[OK] {row.module.display_name}: {result.detail}")
+                    if result.success:
+                        log(f"[OK] {row.module.display_name}: {result.detail}")
+                    else:
+                        log(f"[SKIP] {row.module.display_name}: {result.detail}")
                 except Exception as e:
                     failed.append(row.module.display_name)
                     log(f"[FAIL] {row.module.display_name}: {e}")
