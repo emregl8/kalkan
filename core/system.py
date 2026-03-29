@@ -24,6 +24,8 @@ def install_pkg(*packages: str) -> list[str]:
             subprocess.run(
                 ["sudo", "apt-get", "install", "-y", "-q", pkg],
                 check=True,
+                stdin=subprocess.DEVNULL,
+                env={**__import__("os").environ, "DEBIAN_FRONTEND": "noninteractive"},
             )
             installed.append(pkg)
     return installed

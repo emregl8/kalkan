@@ -4,13 +4,11 @@ from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, install_pkg
 from core.backup import ensure_backup
-from core.priv import (sudo_exists, sudo_read, sudo_write, sudo_chown,
-                       sudo_chmod, sudo_makedirs, sudo_remove)
+from core.priv import sudo_exists, sudo_read, sudo_write, sudo_chown, sudo_chmod, sudo_makedirs
 
 GA_DIR = "/etc/google-authenticator"
 PAM_FILE = "/etc/pam.d/common-auth"
 PAM_LINE = "auth required pam_google_authenticator.so user=root secret=/etc/google-authenticator/${USER}"
-SSHD_DROPIN = "/etc/ssh/sshd_config.d/99-2fa.conf"
 PACKAGES = ["libpam-google-authenticator", "qrencode"]
 
 
@@ -20,7 +18,7 @@ def _target_user() -> str:
 
 class GoogleAuthenticatorModule(SecurityModule):
     display_name = "Google Authenticator"
-    description = "TOTP-based two-factor authentication for PAM and SSH"
+    description = "TOTP-based two-factor authentication via PAM"
     icon_name = "dialog-password-symbolic"
 
     def scan(self) -> ScanResult:
@@ -46,13 +44,15 @@ class GoogleAuthenticatorModule(SecurityModule):
         sudo_makedirs(GA_DIR, 0o700)
         sudo_chown(GA_DIR, 0, 0)
 
-        subprocess.run([
+        r = subprocess.run([
             "sudo", "google-authenticator",
-            "--time-based", "--disallow-reuse", "--force",
+            "--time-based", "--disallow-reuse", "--force", "--no-confirm", "--quiet",
             "--window-size=3", "--rate-limit=3", "--rate-time=30",
             "--emergency-codes=5",
             f"--secret={secret_file}",
-        ], check=True, capture_output=True)
+        ], capture_output=True, stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.decode().strip() or "google-authenticator failed")
 
         sudo_chown(secret_file, 0, 0)
         sudo_chmod(secret_file, 0o400)
@@ -61,22 +61,6 @@ class GoogleAuthenticatorModule(SecurityModule):
         pam_content = sudo_read(PAM_FILE)
         if "pam_google_authenticator.so" not in pam_content:
             sudo_write(PAM_FILE, pam_content + f"\n{PAM_LINE}\n")
-
-        sudo_makedirs("/etc/ssh/sshd_config.d")
-        ensure_backup(SSHD_DROPIN)
-        sudo_write(SSHD_DROPIN,
-                   "KbdInteractiveAuthentication yes\n"
-                   "UsePAM yes\n"
-                   "AuthenticationMethods publickey,keyboard-interactive keyboard-interactive\n")
-        sudo_chown(SSHD_DROPIN, 0, 0)
-        sudo_chmod(SSHD_DROPIN, 0o644)
-
-        r = subprocess.run(["sudo", "sshd", "-t"], capture_output=True)
-        if r.returncode != 0:
-            sudo_remove(SSHD_DROPIN)
-            raise RuntimeError("Invalid SSHD config — dropin reverted")
-
-        subprocess.run(["sudo", "systemctl", "restart", "ssh"], check=True, capture_output=True)
 
         secret_key = sudo_read(secret_file).split('\n')[0].strip()
         qr_file = f"/tmp/kalkan-2fa-{user}.png"
