@@ -1,8 +1,11 @@
+import re
 import subprocess
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
-from core.priv import sudo_write, sudo_chown, sudo_chmod
+from core.priv import sudo_write, sudo_chown, sudo_chmod, sudo_read
 from core.backup import ensure_backup
+
+_SYSCTL_CONF = "/etc/sysctl.conf"
 
 CONF_FILE = "/etc/sysctl.d/99-kalkan-hardening.conf"
 
@@ -42,6 +45,32 @@ _PARAMS = {
 _CONF = "\n".join(f"{k} = {v}" for k, v in _PARAMS.items()) + "\n"
 
 
+def _neutralise_sysctl_conf() -> None:
+    try:
+        original = sudo_read(_SYSCTL_CONF)
+    except Exception:
+        return
+
+    keys = set(_PARAMS.keys())
+    new_lines = []
+    changed = False
+    for line in original.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or not stripped:
+            new_lines.append(line)
+            continue
+        m = re.match(r"^\s*([^=\s]+)\s*=", stripped)
+        if m and m.group(1) in keys:
+            new_lines.append(f"# kalkan: {line}")
+            changed = True
+        else:
+            new_lines.append(line)
+
+    if changed:
+        ensure_backup(_SYSCTL_CONF)
+        sudo_write(_SYSCTL_CONF, "\n".join(new_lines) + "\n")
+
+
 def _read_current(key: str) -> str | None:
     r = subprocess.run(["/usr/sbin/sysctl", "-n", key], capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else None
@@ -74,12 +103,20 @@ class SysctlHardeningModule(SecurityModule):
         sudo_chown(CONF_FILE, 0, 0)
         sudo_chmod(CONF_FILE, 0o644)
 
+        _neutralise_sysctl_conf()
+
         r = subprocess.run(
             ["sudo", "/usr/sbin/sysctl", "--system"],
             capture_output=True, text=True
         )
         if r.returncode != 0:
             raise RuntimeError(r.stderr.strip())
+
+        for key, val in _PARAMS.items():
+            subprocess.run(
+                ["sudo", "/usr/sbin/sysctl", "-w", f"{key}={val}"],
+                capture_output=True,
+            )
 
         return ApplyResult(True, f"{len(_PARAMS)} kernel parameters applied")
 
