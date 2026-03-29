@@ -5,6 +5,7 @@ from .unattended_upgrades import UnattendedUpgradesModule
 from .usbguard import USBGuardModule
 from .google_authenticator import GoogleAuthenticatorModule
 from .tpm_unlock import TPMUnlockModule
+from .rsyslog import RsyslogModule
 
 ALL_MODULES = [
     UFWModule,
@@ -14,4 +15,5 @@ ALL_MODULES = [
     USBGuardModule,
     GoogleAuthenticatorModule,
     TPMUnlockModule,
+    RsyslogModule,
 ]
