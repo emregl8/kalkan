@@ -4,6 +4,7 @@ from .firefox_policy import FirefoxPolicyModule
 from .unattended_upgrades import UnattendedUpgradesModule
 from .usbguard import USBGuardModule
 from .google_authenticator import GoogleAuthenticatorModule
+from .tpm_unlock import TPMUnlockModule
 
 ALL_MODULES = [
     UFWModule,
@@ -12,4 +13,5 @@ ALL_MODULES = [
     UnattendedUpgradesModule,
     USBGuardModule,
     GoogleAuthenticatorModule,
+    TPMUnlockModule,
 ]
