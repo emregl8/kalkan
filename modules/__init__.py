@@ -6,6 +6,7 @@ from .usbguard import USBGuardModule
 from .google_authenticator import GoogleAuthenticatorModule
 from .tpm_unlock import TPMUnlockModule
 from .rsyslog import RsyslogModule
+from .sysctl_hardening import SysctlHardeningModule
 
 ALL_MODULES = [
     UFWModule,
@@ -16,4 +17,5 @@ ALL_MODULES = [
     GoogleAuthenticatorModule,
     TPMUnlockModule,
     RsyslogModule,
+    SysctlHardeningModule,
 ]
