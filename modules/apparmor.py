@@ -4,7 +4,6 @@ import subprocess
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
-from core.backup import ensure_backup
 from core.priv import sudo_copy, sudo_chown, sudo_chmod
 from core.config import APPARMOR_PROFILES_DIR
 
@@ -76,7 +75,6 @@ class AppArmorModule(SecurityModule):
             if not os.path.exists(src):
                 raise FileNotFoundError(f"Custom profile not found: {src}")
             dest = os.path.join(APPARMOR_D, profile)
-            ensure_backup(dest)
             sudo_copy(src, dest)
             sudo_chown(dest, 0, 0)
             sudo_chmod(dest, 0o644)
