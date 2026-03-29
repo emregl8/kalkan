@@ -166,13 +166,21 @@ class MainWindow(Gtk.ApplicationWindow):
                     failed.append(row.module.display_name)
                     log(f"[FAIL] {row.module.display_name}: {e}")
 
-            for row in self._rows:
                 try:
                     verified = row.module.verify()
                 except Exception as e:
                     from core.models import ScanResult
                     verified = ScanResult(ModuleStatus.ERROR, str(e))
                 GLib.idle_add(row.update_status, verified)
+
+            for row in self._rows:
+                if row not in selected:
+                    try:
+                        verified = row.module.verify()
+                    except Exception as e:
+                        from core.models import ScanResult
+                        verified = ScanResult(ModuleStatus.ERROR, str(e))
+                    GLib.idle_add(row.update_status, verified)
 
             GLib.idle_add(self._on_apply_done, failed)
 
