@@ -4,7 +4,7 @@ from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
 from core.backup import ensure_backup
-from core.priv import sudo_write, sudo_chown, sudo_chmod
+from core.priv import sudo_write, sudo_chown, sudo_chmod, sudo_read
 
 CONF_FILE = "/etc/rsyslog.d/99-kalkan-hardening.conf"
 
@@ -35,10 +35,9 @@ class RsyslogModule(SecurityModule):
             return ScanResult(ModuleStatus.PARTIAL, "Running but hardening config not deployed")
 
         try:
-            with open(CONF_FILE) as f:
-                if _MARKER not in f.read():
-                    return ScanResult(ModuleStatus.PARTIAL, "Config exists but does not match")
-        except OSError:
+            if _MARKER not in sudo_read(CONF_FILE):
+                return ScanResult(ModuleStatus.PARTIAL, "Config exists but does not match")
+        except Exception:
             return ScanResult(ModuleStatus.PARTIAL, "Could not read hardening config")
 
         return ScanResult(ModuleStatus.APPLIED, "Active with hardened configuration")
@@ -83,9 +82,8 @@ class RsyslogModule(SecurityModule):
         if os.path.exists(CONF_FILE):
             lines.append(f"\n--- {CONF_FILE} ---")
             try:
-                with open(CONF_FILE) as f:
-                    lines.append(f.read().strip())
-            except OSError:
+                lines.append(sudo_read(CONF_FILE).strip())
+            except Exception:
                 lines.append("(permission denied)")
 
         return "\n".join(lines) if lines else None

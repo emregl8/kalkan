@@ -4,7 +4,7 @@ from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, service_active, install_pkg
 from core.backup import ensure_backup
-from core.priv import sudo_write, sudo_chown, sudo_chmod
+from core.priv import sudo_write, sudo_chown, sudo_chmod, sudo_read
 
 UPGRADES_CONF = "/etc/apt/apt.conf.d/50unattended-upgrades"
 AUTO_UPGRADES_CONF = "/etc/apt/apt.conf.d/20auto-upgrades"
@@ -41,10 +41,14 @@ class UnattendedUpgradesModule(SecurityModule):
         if not pkg_installed("unattended-upgrades"):
             return ScanResult(ModuleStatus.NOT_APPLIED, "Package not installed")
 
+        try:
+            content = sudo_read(UPGRADES_CONF)
+        except Exception:
+            content = ""
         conf_ok = (
             os.path.exists(UPGRADES_CONF)
             and os.path.exists(AUTO_UPGRADES_CONF)
-            and 'distro_codename}-security' in open(UPGRADES_CONF).read()
+            and 'distro_codename}-security' in content
         )
         if not conf_ok:
             return ScanResult(ModuleStatus.PARTIAL, "Installed but not configured")
