@@ -93,6 +93,11 @@ class MainWindow(Gtk.ApplicationWindow):
         self._status.add_css_class("dim-label")
         bottom_bar.append(self._status)
 
+        self._select_btn = Gtk.Button(label="Select All")
+        self._select_btn.set_sensitive(False)
+        self._select_btn.connect("clicked", self._on_toggle_select)
+        bottom_bar.append(self._select_btn)
+
         self._apply_btn = Gtk.Button(label="Apply Selected")
         self._apply_btn.add_css_class("suggested-action")
         self._apply_btn.set_sensitive(False)
@@ -102,10 +107,17 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _set_busy(self, busy: bool):
         self._apply_btn.set_sensitive(not busy)
+        self._select_btn.set_sensitive(not busy)
         if busy:
             self._spinner.start()
         else:
             self._spinner.stop()
+
+    def _on_toggle_select(self, _btn):
+        all_selected = all(r.is_selected for r in self._rows)
+        for row in self._rows:
+            row.set_checked(not all_selected)
+        self._select_btn.set_label("Deselect All" if not all_selected else "Select All")
 
     def _on_scan(self, _btn):
         self._set_busy(True)

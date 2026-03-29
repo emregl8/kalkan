@@ -141,6 +141,9 @@ class ModuleRow(Gtk.ListBoxRow):
     def is_selected(self) -> bool:
         return self._check.get_active()
 
+    def set_checked(self, value: bool) -> None:
+        self._check.set_active(value)
+
     def update_status(self, result: ScanResult):
         self._desc_label.set_label(result.detail)
 
@@ -149,7 +152,6 @@ class ModuleRow(Gtk.ListBoxRow):
         self._badge.set_label(result.label)
         self._badge.add_css_class(result.badge_class)
 
-        self._check.set_active(result.status != ModuleStatus.APPLIED)
         self._check.set_sensitive(True)
 
         for name, cb in self._profile_checks.items():
