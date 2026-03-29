@@ -1,5 +1,10 @@
 import os
 import subprocess
+import threading
+import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, install_pkg
@@ -14,6 +19,41 @@ PACKAGES = ["libpam-google-authenticator", "qrencode"]
 
 def _target_user() -> str:
     return os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
+
+
+def _show_qr_dialog(uri: str, user: str) -> None:
+    r = subprocess.run(
+        ["qrencode", "-t", "UTF8", "-o", "-", uri],
+        capture_output=True, text=True
+    )
+    qr_text = r.stdout if r.returncode == 0 else uri
+
+    def build_and_show():
+        dialog = Gtk.Dialog()
+        dialog.set_title(f"2FA QR Code — {user}")
+        dialog.set_default_size(500, 500)
+        dialog.set_modal(True)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_margin_top(12)
+        scrolled.set_margin_bottom(12)
+        scrolled.set_margin_start(12)
+        scrolled.set_margin_end(12)
+
+        text_view = Gtk.TextView()
+        text_view.set_editable(False)
+        text_view.set_monospace(True)
+        text_view.set_cursor_visible(False)
+        text_view.get_buffer().set_text(qr_text)
+        scrolled.set_child(text_view)
+
+        dialog.get_content_area().append(scrolled)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        dialog.connect("response", lambda d, _: d.destroy())
+        dialog.present()
+
+    GLib.idle_add(build_and_show)
 
 
 class GoogleAuthenticatorModule(SecurityModule):
@@ -63,15 +103,10 @@ class GoogleAuthenticatorModule(SecurityModule):
             sudo_write(PAM_FILE, pam_content + f"\n{PAM_LINE}\n")
 
         secret_key = sudo_read(secret_file).split('\n')[0].strip()
-        qr_file = f"/tmp/kalkan-2fa-{user}.png"
-        subprocess.run([
-            "qrencode", "-o", qr_file, "-s", "6",
-            f"otpauth://totp/{user}?secret={secret_key}&issuer=Kalkan",
-        ], check=True, capture_output=True)
-        os.chmod(qr_file, 0o600)
-        subprocess.Popen(["xdg-open", qr_file])
+        uri = f"otpauth://totp/{user}?secret={secret_key}&issuer=Kalkan"
+        _show_qr_dialog(uri, user)
 
-        detail = f"2FA configured for {user}, QR code opened"
+        detail = f"2FA configured for {user}, QR code displayed"
         if installed:
             detail = f"Installed {', '.join(installed)}, " + detail.lower()
         return ApplyResult(True, detail)
