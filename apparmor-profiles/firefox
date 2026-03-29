@@ -1,0 +1,223 @@
+abi <abi/3.0>,
+include <tunables/global>
+
+profile firefox /usr/lib/firefox-esr/firefox-esr {
+  include <abstractions/base>
+  include <abstractions/fonts>
+  include <abstractions/nameservice>
+  include <abstractions/dbus-session-strict>
+  include <abstractions/gnome>
+  include <abstractions/X>
+  include <abstractions/audio>
+  include <abstractions/cups-client>
+  include <abstractions/dbus-accessibility>
+  include <abstractions/mesa>
+  include <abstractions/openssl>
+
+  # ============================================================
+  # NETWORK
+  # ============================================================
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network netlink raw,
+
+  audit deny network inet raw,
+  audit deny network inet6 raw,
+  audit deny network packet,
+
+  # ============================================================
+  # CAPABILITIES
+  # ============================================================
+  capability sys_admin,
+  capability sys_chroot,
+  userns,
+
+  deny capability net_bind_service,
+  deny capability net_raw,
+  deny capability sys_ptrace,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_boot,
+  deny capability sys_time,
+  deny capability syslog,
+  deny capability dac_override,
+  deny capability dac_read_search,
+  deny capability mknod,
+  deny capability fowner,
+  deny capability chown,
+  deny capability setuid,
+  deny capability setgid,
+  deny capability perfmon,
+  deny capability bpf,
+  deny capability checkpoint_restore,
+
+  # ============================================================
+  # IPC & SIGNALS
+  # ============================================================
+  unix (send, receive) type=stream peer=(label=firefox),
+  unix (send, receive) type=dgram peer=(label=firefox),
+  unix (send, receive) type=seqpacket peer=(label=firefox),
+
+  signal (send, receive) set=(term, kill, hup, int, chld) peer=firefox,
+  ptrace (read) peer=firefox,
+
+  deny ptrace (tracedby),
+  deny ptrace (readby),
+
+  # ============================================================
+  # SENSITIVE SYSTEM FILES — DENIED WITH AUDIT
+  # ============================================================
+  audit deny /boot/**          rwklx,
+  audit deny /root/**          rwklx,
+  audit deny /var/log/**       rwklx,
+  audit deny /var/spool/**     rwklx,
+  audit deny /var/lib/dpkg/**  rwklx,
+
+  audit deny /etc/shadow       rwklx,
+  audit deny /etc/sudoers      rwklx,
+  audit deny /etc/sudoers.d/** rwklx,
+  audit deny /etc/pam.d/**     rwklx,
+  audit deny /etc/security/**  rwklx,
+  audit deny /etc/ssl/private/     rwklx,
+  audit deny /etc/ssl/private/**   rwklx,
+
+  audit deny /etc/cron*        rwklx,
+  audit deny /etc/systemd/**   rwklx,
+  audit deny /etc/NetworkManager/system-connections/** rwklx,
+  audit deny /etc/iptables/**  rwklx,
+
+  audit deny /proc/kallsyms        r,
+  audit deny /proc/modules         r,
+  audit deny /proc/config.gz       r,
+  audit deny /proc/*/mem           rwklx,
+  audit deny /proc/kcore           r,
+  audit deny /proc/sysrq-trigger   w,
+  audit deny /proc/net/            r,
+  audit deny /proc/net/**          r,
+  audit deny /proc/timer_list      r,
+  audit deny /proc/timer_stats     r,
+  audit deny /proc/sched_debug     r,
+  audit deny /sys/kernel/**        r,
+
+  audit deny /tmp/**           x,
+  audit deny /var/tmp/**       x,
+
+  audit deny @{HOME}/.recently-used.xbel*              rwklx,
+  audit deny @{HOME}/.local/share/recently-used.xbel*  rwklx,
+
+  audit deny @{HOME}/.ssh/**   rwklx,
+  audit deny @{HOME}/.gnupg/** rwklx,
+  audit deny @{HOME}/.aws/**   rwklx,
+  audit deny @{HOME}/.config/keepass*/**  rwklx,
+  audit deny @{HOME}/.config/keepassxc/** rwklx,
+  audit deny @{HOME}/.local/share/keyrings/** rwklx,
+  audit deny /dev/video*                 rwklx,
+
+  # ============================================================
+  # ALLOWED SYSTEM FILES
+  # ============================================================
+  /etc/passwd                  r,
+  /etc/mailcap                 r,
+  /etc/mime.types              r,
+  /etc/firefox-esr/            r,
+  /etc/firefox-esr/**          r,
+  /etc/glvnd/egl_vendor.d/     r,
+  /etc/glvnd/egl_vendor.d/**   r,
+  /etc/ld.so.cache             r,
+  /dev/                        r,
+  /usr/lib/locale/             r,
+  /usr/lib/locale/**           r,
+  /var/cache/fontconfig/       r,
+  /var/cache/fontconfig/**     r,
+  /usr/share/fonts/**          r,
+  /usr/share/icons/**          r,
+  /usr/share/mime/**           r,
+  /usr/share/themes/**         r,
+  /usr/share/glib-2.0/schemas/ r,
+  /usr/share/glib-2.0/schemas/** r,
+  /usr/share/gtk-3.0/**        r,
+  /usr/share/locale/           r,
+  /usr/share/locale/**         r,
+  /usr/share/X11/              r,
+  /usr/share/X11/**            r,
+  /usr/share/firefox-esr/      r,
+  /usr/share/firefox-esr/**    r,
+  /usr/share/mozilla/extensions/ r,
+  /usr/share/mozilla/extensions/** r,
+  /usr/share/glvnd/egl_vendor.d/ r,
+  /usr/share/glvnd/egl_vendor.d/** r,
+
+  # ============================================================
+  # PROC & SYS — MINIMAL READ
+  # ============================================================
+  owner @{PROC}/@{pid}/stat       r,
+  owner @{PROC}/@{pid}/statm      r,
+  owner @{PROC}/@{pid}/smaps      r,
+  owner @{PROC}/@{pid}/mountinfo  r,
+  owner @{PROC}/@{pid}/cgroup     r,
+  owner @{PROC}/@{pid}/maps        r,
+  owner @{PROC}/@{pid}/task/      r,
+  owner @{PROC}/@{pid}/task/*/stat r,
+  owner @{PROC}/*/task/           r,
+  owner @{PROC}/*/fd/             r,
+  owner @{PROC}/*/oom_score_adj   w,
+
+  owner @{PROC}/*/uid_map    w,
+  owner @{PROC}/*/gid_map    w,
+  owner @{PROC}/*/setgroups  w,
+
+  @{sys}/devices/system/cpu/present  r,
+  @{sys}/devices/system/cpu/**       r,
+  @{sys}/devices/system/node/        r,
+  @{sys}/devices/system/node/**      r,
+  @{sys}/devices/pci*/**             r,
+  @{sys}/devices/virtual/dmi/id/product_name r,
+  @{sys}/bus/pci/devices/            r,
+
+  # ============================================================
+  # FIREFOX BINARY & LIBRARIES
+  # ============================================================
+  /usr/lib/firefox-esr/firefox-esr  mr,
+  /usr/lib/firefox-esr/**           rix,
+
+  /usr/lib/**                        r,
+
+  # ============================================================
+  # USER DATA
+  # ============================================================
+  owner @{HOME}/.mozilla/firefox/        rw,
+  owner @{HOME}/.mozilla/firefox/**      rwk,
+  owner @{HOME}/.mozilla/firefox-esr/    rw,
+  owner @{HOME}/.mozilla/firefox-esr/**  rwk,
+  owner @{HOME}/.cache/mozilla/firefox/  rw,
+  owner @{HOME}/.cache/mozilla/firefox/** rwk,
+  owner @{HOME}/.cache/mesa_shader_cache_db/    rw,
+  owner @{HOME}/.cache/mesa_shader_cache_db/**  rwk,
+  owner @{HOME}/.cache/fontconfig/     rw,
+  owner @{HOME}/.cache/fontconfig/**   rwk,
+
+  @{HOME}/.mozilla/firefox/             w,
+  @{HOME}/.mozilla/firefox/**           w,
+  @{HOME}/.mozilla/firefox-esr/         w,
+  @{HOME}/.mozilla/firefox-esr/**       w,
+  @{HOME}/.cache/mozilla/firefox/       w,
+  @{HOME}/.cache/mozilla/firefox/**     w,
+  @{HOME}/.cache/mesa_shader_cache_db/  w,
+  @{HOME}/.cache/mesa_shader_cache_db/** w,
+  @{HOME}/.cache/fontconfig/            w,
+  @{HOME}/.cache/fontconfig/**          w,
+
+  owner @{HOME}/Downloads/              rw,
+  owner @{HOME}/Downloads/**            rw,
+  audit deny @{HOME}/Downloads/**       kx,
+
+  # ============================================================
+  # DEVICES & DISPLAY
+  # ============================================================
+  /dev/dri/**                            rw,
+  owner /run/user/*/dconf/user           rw,
+  owner @{HOME}/.config/dconf/user       r,
+  owner /run/user/*/wayland-proxy-*      rw,
+}
