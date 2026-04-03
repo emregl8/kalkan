@@ -70,7 +70,7 @@ def _systemd_tpm2_enrolled(dev: str) -> bool:
         return False
 
 
-def _ask_passphrase() -> str | None:
+def _ask_passphrase() -> bytearray | None:
     event = threading.Event()
     result = [None]
 
@@ -100,7 +100,9 @@ def _ask_passphrase() -> str | None:
 
         def on_response(d, response):
             if response == Gtk.ResponseType.OK:
-                result[0] = entry.get_text()
+                text = entry.get_text()
+                result[0] = bytearray(text.encode())
+                entry.set_text("")
             d.destroy()
             event.set()
 
@@ -162,26 +164,40 @@ class TPMUnlockModule(SecurityModule):
         if passphrase is None:
             log("[TPM2] passphrase dialog cancelled or timed out")
             return ApplyResult(False, "Cancelled by user")
+        if len(passphrase) == 0:
+            return ApplyResult(False, "Passphrase cannot be empty")
 
         bound = []
-        for dev in devices:
-            if _clevis_tpm2_bound(dev):
-                log(f"[TPM2] {dev} already bound, skipping")
+        errors = []
+        try:
+            for dev in devices:
+                if _clevis_tpm2_bound(dev):
+                    log(f"[TPM2] {dev} already bound, skipping")
+                    bound.append(dev)
+                    continue
+                log(f"[TPM2] binding {dev} with clevis tpm2")
+                r = subprocess.run(
+                    ["sudo", "clevis", "luks", "bind",
+                     "-d", dev,
+                     "tpm2", '{"pcr_bank":"sha256","pcr_ids":"0,4,7"}'],
+                    input=passphrase.decode() + "\n",
+                    capture_output=True,
+                    text=True,
+                )
+                if r.returncode != 0:
+                    log(f"[TPM2] bind failed for {dev}: {r.stderr.strip()}")
+                    errors.append(f"{dev}: {r.stderr.strip()}")
+                    continue
+                log(f"[TPM2] {dev} bound successfully")
                 bound.append(dev)
-                continue
-            log(f"[TPM2] binding {dev} with clevis tpm2")
-            r = subprocess.run(
-                ["sudo", "clevis", "luks", "bind",
-                 "-d", dev,
-                 "tpm2", '{"pcr_bank":"sha256","pcr_ids":"0,7"}'],
-                input=passphrase + "\n",
-                capture_output=True,
-                text=True,
-            )
-            if r.returncode != 0:
-                raise RuntimeError(f"Clevis bind failed for {dev}: {r.stderr.strip()}")
-            log(f"[TPM2] {dev} bound successfully")
-            bound.append(dev)
+        finally:
+            for i in range(len(passphrase)):
+                passphrase[i] = 0
+
+        if errors and not bound:
+            return ApplyResult(False, f"Bind failed: {'; '.join(errors)}")
+        if errors:
+            return ApplyResult(False, f"Partial bind — succeeded: {', '.join(bound)}, failed: {'; '.join(errors)}")
 
         self._cleanup_grub_tpm2()
 
