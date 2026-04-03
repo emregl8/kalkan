@@ -13,31 +13,34 @@ from core.logger import log
 
 
 CRYPTTAB = "/etc/crypttab"
+CLEVIS_PKGS = ["clevis", "clevis-luks", "clevis-tpm2", "clevis-initramfs"]
+
+
+def _read_crypttab() -> str:
+    try:
+        r = subprocess.run(["sudo", "cat", CRYPTTAB], capture_output=True, text=True, timeout=5)
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""
 
 
 def _get_luks_devices() -> list[str]:
     devices = []
-    try:
-        r = subprocess.run(["sudo", "cat", CRYPTTAB], capture_output=True, text=True, timeout=5)
-        if r.returncode != 0:
-            return devices
-        content = r.stdout
-        for line in content.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            dev = parts[1]
-            if dev.startswith("UUID="):
-                uuid_path = f"/dev/disk/by-uuid/{dev[5:]}"
-                if os.path.exists(uuid_path):
-                    devices.append(os.path.realpath(uuid_path))
-            elif os.path.exists(dev):
-                devices.append(dev)
-    except Exception:
-        pass
+    content = _read_crypttab()
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        dev = parts[1]
+        if dev.startswith("UUID="):
+            uuid_path = f"/dev/disk/by-uuid/{dev[5:]}"
+            if os.path.exists(uuid_path):
+                devices.append(os.path.realpath(uuid_path))
+        elif os.path.exists(dev):
+            devices.append(dev)
     return devices
 
 
@@ -45,14 +48,25 @@ def _tpm2_available() -> bool:
     return os.path.exists("/dev/tpmrm0") or os.path.exists("/dev/tpm0")
 
 
-def _tpm2_enrolled(dev: str) -> bool:
+def _clevis_tpm2_bound(dev: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["sudo", "clevis", "luks", "list", "-d", dev],
+            capture_output=True, text=True, timeout=8
+        )
+        return "tpm2" in r.stdout
+    except Exception:
+        return False
+
+
+def _systemd_tpm2_enrolled(dev: str) -> bool:
     try:
         r = subprocess.run(
             ["sudo", "systemd-cryptenroll", dev],
             capture_output=True, text=True, timeout=8
         )
         return "tpm2" in r.stdout
-    except subprocess.TimeoutExpired:
+    except Exception:
         return False
 
 
@@ -111,14 +125,15 @@ class TPMUnlockModule(SecurityModule):
         if not devices:
             return ScanResult(ModuleStatus.NOT_APPLIED, "No LUKS devices in /etc/crypttab")
 
-        if not pkg_installed("tpm2-tools"):
-            return ScanResult(ModuleStatus.PARTIAL, "TPM2 found but tpm2-tools not installed")
+        all_pkgs = all(pkg_installed(p) for p in CLEVIS_PKGS)
+        if not all_pkgs:
+            return ScanResult(ModuleStatus.PARTIAL, "TPM2 found but clevis packages not installed")
 
-        enrolled = [d for d in devices if _tpm2_enrolled(d)]
-        if not enrolled:
-            return ScanResult(ModuleStatus.PARTIAL, f"TPM2 found but not enrolled for {', '.join(devices)}")
+        bound = [d for d in devices if _clevis_tpm2_bound(d)]
+        if not bound:
+            return ScanResult(ModuleStatus.PARTIAL, f"TPM2 found but not bound for {', '.join(devices)}")
 
-        return ScanResult(ModuleStatus.APPLIED, f"TPM2 enrolled for {', '.join(enrolled)}")
+        return ScanResult(ModuleStatus.APPLIED, f"TPM2 bound for {', '.join(bound)}")
 
     def apply(self) -> ApplyResult:
         log("[TPM2] apply started")
@@ -130,8 +145,17 @@ class TPMUnlockModule(SecurityModule):
         if not devices:
             return ApplyResult(False, "No LUKS devices found in /etc/crypttab")
 
-        log("[TPM2] installing tpm2-tools if needed")
-        install_pkg("tpm2-tools")
+        log("[TPM2] installing clevis packages")
+        for pkg in CLEVIS_PKGS:
+            install_pkg(pkg)
+
+        for dev in devices:
+            if _systemd_tpm2_enrolled(dev):
+                log(f"[TPM2] wiping old systemd-cryptenroll tpm2 slot on {dev}")
+                subprocess.run(
+                    ["sudo", "systemd-cryptenroll", "--wipe-slot=tpm2", dev],
+                    capture_output=True, text=True
+                )
 
         log("[TPM2] asking passphrase")
         passphrase = _ask_passphrase()
@@ -139,27 +163,27 @@ class TPMUnlockModule(SecurityModule):
             log("[TPM2] passphrase dialog cancelled or timed out")
             return ApplyResult(False, "Cancelled by user")
 
-        enrolled = []
+        bound = []
         for dev in devices:
-            if _tpm2_enrolled(dev):
-                log(f"[TPM2] {dev} already enrolled, skipping")
-                enrolled.append(dev)
+            if _clevis_tpm2_bound(dev):
+                log(f"[TPM2] {dev} already bound, skipping")
+                bound.append(dev)
                 continue
-            log(f"[TPM2] enrolling {dev}")
+            log(f"[TPM2] binding {dev} with clevis tpm2")
             r = subprocess.run(
-                ["sudo", "systemd-cryptenroll",
-                 "--tpm2-device=auto",
-                 "--tpm2-pcrs=0+7",
-                 "--unlock-key-file=/dev/stdin",
-                 dev],
-                input=passphrase,
+                ["sudo", "clevis", "luks", "bind",
+                 "-d", dev,
+                 "tpm2", '{"pcr_bank":"sha256","pcr_ids":"0,7"}'],
+                input=passphrase + "\n",
                 capture_output=True,
                 text=True,
             )
             if r.returncode != 0:
-                raise RuntimeError(f"Enrollment failed for {dev}: {r.stderr.strip()}")
-            log(f"[TPM2] {dev} enrolled successfully")
-            enrolled.append(dev)
+                raise RuntimeError(f"Clevis bind failed for {dev}: {r.stderr.strip()}")
+            log(f"[TPM2] {dev} bound successfully")
+            bound.append(dev)
+
+        self._cleanup_grub_tpm2()
 
         log("[TPM2] running update-initramfs (this may take several minutes)")
         subprocess.run(
@@ -168,7 +192,26 @@ class TPMUnlockModule(SecurityModule):
         )
         log("[TPM2] update-initramfs done")
 
-        return ApplyResult(True, f"TPM2 enrolled for {', '.join(enrolled)}, initramfs updated")
+        return ApplyResult(True, f"TPM2 bound for {', '.join(bound)}, initramfs updated")
+
+    def _cleanup_grub_tpm2(self):
+        tpm_opt = "rd.luks.options=tpm2-device=auto"
+        try:
+            r = subprocess.run(
+                ["sudo", "cat", "/etc/default/grub"],
+                capture_output=True, text=True, timeout=5
+            )
+            if r.returncode != 0 or tpm_opt not in r.stdout:
+                return
+            new_content = r.stdout.replace(f" {tpm_opt}", "").replace(tpm_opt, "")
+            subprocess.run(
+                ["sudo", "tee", "/etc/default/grub"],
+                input=new_content, capture_output=True, text=True
+            )
+            subprocess.run(["sudo", "update-grub"], capture_output=True, text=True)
+            log("[TPM2] cleaned up old GRUB tpm2 kernel option")
+        except Exception:
+            pass
 
     def detail_info(self) -> str | None:
         devices = _get_luks_devices()
@@ -177,12 +220,15 @@ class TPMUnlockModule(SecurityModule):
 
         lines = []
         for dev in devices:
+            lines.append(f"Device: {dev}")
             r = subprocess.run(
-                ["sudo", "systemd-cryptenroll", dev],
+                ["sudo", "clevis", "luks", "list", "-d", dev],
                 capture_output=True, text=True
             )
-            lines.append(f"Device: {dev}")
-            lines.append(r.stdout.strip() if r.returncode == 0 else "  (could not read keyslots)")
+            if r.returncode == 0 and r.stdout.strip():
+                lines.append(f"  Clevis: {r.stdout.strip()}")
+            else:
+                lines.append("  Clevis: not bound")
             lines.append("")
         return "\n".join(lines).strip()
 
