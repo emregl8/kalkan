@@ -7,6 +7,7 @@ from .google_authenticator import GoogleAuthenticatorModule
 from .tpm_unlock import TPMUnlockModule
 from .rsyslog import RsyslogModule
 from .sysctl_hardening import SysctlHardeningModule
+from .ssh_hardening import SSHHardeningModule
 
 ALL_MODULES = [
     UFWModule,
@@ -18,4 +19,5 @@ ALL_MODULES = [
     TPMUnlockModule,
     RsyslogModule,
     SysctlHardeningModule,
+    SSHHardeningModule,
 ]
