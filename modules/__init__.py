@@ -8,6 +8,7 @@ from .tpm_unlock import TPMUnlockModule
 from .rsyslog import RsyslogModule
 from .sysctl_hardening import SysctlHardeningModule
 from .ssh_hardening import SSHHardeningModule
+from .auditd import AuditdModule
 
 ALL_MODULES = [
     UFWModule,
@@ -20,4 +21,5 @@ ALL_MODULES = [
     RsyslogModule,
     SysctlHardeningModule,
     SSHHardeningModule,
+    AuditdModule,
 ]

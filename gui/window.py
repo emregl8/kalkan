@@ -6,6 +6,7 @@ from gi.repository import Gtk, GLib, Gdk
 from modules import ALL_MODULES
 from core.models import ModuleStatus, ScanResult
 from core.logger import log, log_separator
+from core.system import kill_tracked
 from .module_row import ModuleRow
 
 
@@ -64,6 +65,7 @@ _CSS = b"""
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.connect("close-request", self._on_close_request)
         self.set_title("Kalkan")
         self.set_default_size(880, 640)
 
@@ -126,6 +128,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._apply_btn.set_halign(Gtk.Align.END)
         bottom_bar.append(self._apply_btn)
 
+    def _on_close_request(self, _win) -> bool:
+        kill_tracked()
+        return False
+
     def _set_busy(self, busy: bool):
         self._apply_btn.set_sensitive(not busy)
         self._select_btn.set_sensitive(not busy)
@@ -169,13 +175,13 @@ class MainWindow(Gtk.ApplicationWindow):
             return
 
         self._set_busy(True)
-        names = ", ".join(r.module.display_name for r in selected)
-        self._status.set_label(f"Applying: {names}…")
 
         def worker():
             log_separator("APPLY")
             failed = []
             for row in selected:
+                GLib.idle_add(self._status.set_label,
+                              f"Applying: {row.module.display_name}…")
                 try:
                     result = row.module.apply()
                     if result.success:
