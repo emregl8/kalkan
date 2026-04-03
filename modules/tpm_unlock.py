@@ -71,6 +71,32 @@ def _clevis_tpm2_bound(dev: str) -> bool:
         return False
 
 
+def _clevis_pcr_matches(dev: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["sudo", "clevis", "luks", "list", "-d", dev],
+            capture_output=True, text=True, timeout=8
+        )
+        return '"pcr_ids":"0,4,7"' in r.stdout or '"pcr_ids": "0,4,7"' in r.stdout
+    except Exception:
+        return False
+
+
+def _clevis_tpm2_slot(dev: str) -> int | None:
+    try:
+        r = subprocess.run(
+            ["sudo", "clevis", "luks", "list", "-d", dev],
+            capture_output=True, text=True, timeout=8
+        )
+        for line in r.stdout.splitlines():
+            parts = line.split(":", 1)
+            if len(parts) == 2 and "tpm2" in parts[1]:
+                return int(parts[0].strip())
+    except Exception:
+        pass
+    return None
+
+
 def _systemd_tpm2_enrolled(dev: str) -> bool:
     try:
         r = subprocess.run(
@@ -187,9 +213,17 @@ class TPMUnlockModule(SecurityModule):
         try:
             for dev in devices:
                 if _clevis_tpm2_bound(dev):
-                    log(f"[TPM2] {dev} already bound, skipping")
-                    bound.append(dev)
-                    continue
+                    if _clevis_pcr_matches(dev):
+                        log(f"[TPM2] {dev} already bound with correct config, skipping")
+                        bound.append(dev)
+                        continue
+                    slot = _clevis_tpm2_slot(dev)
+                    if slot is not None:
+                        log(f"[TPM2] {dev} bound with outdated PCR config, unbinding slot {slot}")
+                        subprocess.run(
+                            ["sudo", "clevis", "luks", "unbind", "-d", dev, "-s", str(slot)],
+                            capture_output=True, text=True
+                        )
                 log(f"[TPM2] binding {dev} with clevis tpm2")
                 r = subprocess.run(
                     [_BIND_HELPER, dev, _TPM2_CONFIG],
