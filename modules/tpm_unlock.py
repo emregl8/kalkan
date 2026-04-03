@@ -1,5 +1,6 @@
 import os
 import subprocess
+
 import threading
 import gi
 gi.require_version("Gtk", "4.0")
@@ -8,7 +9,8 @@ from gi.repository import Gtk, GLib
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
 from core.system import pkg_installed, install_pkg
-from core.priv import sudo_read
+from core.logger import log
+
 
 CRYPTTAB = "/etc/crypttab"
 
@@ -16,7 +18,10 @@ CRYPTTAB = "/etc/crypttab"
 def _get_luks_devices() -> list[str]:
     devices = []
     try:
-        content = sudo_read(CRYPTTAB)
+        r = subprocess.run(["sudo", "cat", CRYPTTAB], capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            return devices
+        content = r.stdout
         for line in content.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -26,9 +31,9 @@ def _get_luks_devices() -> list[str]:
                 continue
             dev = parts[1]
             if dev.startswith("UUID="):
-                r = subprocess.run(["blkid", "-U", dev[5:]], capture_output=True, text=True)
-                if r.returncode == 0 and r.stdout.strip():
-                    devices.append(r.stdout.strip())
+                uuid_path = f"/dev/disk/by-uuid/{dev[5:]}"
+                if os.path.exists(uuid_path):
+                    devices.append(os.path.realpath(uuid_path))
             elif os.path.exists(dev):
                 devices.append(dev)
     except Exception:
@@ -41,11 +46,14 @@ def _tpm2_available() -> bool:
 
 
 def _tpm2_enrolled(dev: str) -> bool:
-    r = subprocess.run(
-        ["sudo", "systemd-cryptenroll", dev],
-        capture_output=True, text=True
-    )
-    return "tpm2" in r.stdout
+    try:
+        r = subprocess.run(
+            ["sudo", "systemd-cryptenroll", dev],
+            capture_output=True, text=True, timeout=8
+        )
+        return "tpm2" in r.stdout
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def _ask_passphrase() -> str | None:
@@ -86,7 +94,7 @@ def _ask_passphrase() -> str | None:
         dialog.present()
 
     GLib.idle_add(build_and_show)
-    event.wait()
+    event.wait(timeout=300)
     return result[0]
 
 
@@ -113,41 +121,52 @@ class TPMUnlockModule(SecurityModule):
         return ScanResult(ModuleStatus.APPLIED, f"TPM2 enrolled for {', '.join(enrolled)}")
 
     def apply(self) -> ApplyResult:
+        log("[TPM2] apply started")
         if not _tpm2_available():
             return ApplyResult(False, "No TPM2 device found on this system")
 
         devices = _get_luks_devices()
+        log(f"[TPM2] LUKS devices: {devices}")
         if not devices:
             return ApplyResult(False, "No LUKS devices found in /etc/crypttab")
 
+        log("[TPM2] installing tpm2-tools if needed")
         install_pkg("tpm2-tools")
 
+        log("[TPM2] asking passphrase")
         passphrase = _ask_passphrase()
         if passphrase is None:
+            log("[TPM2] passphrase dialog cancelled or timed out")
             return ApplyResult(False, "Cancelled by user")
 
         enrolled = []
         for dev in devices:
             if _tpm2_enrolled(dev):
+                log(f"[TPM2] {dev} already enrolled, skipping")
                 enrolled.append(dev)
                 continue
+            log(f"[TPM2] enrolling {dev}")
             r = subprocess.run(
                 ["sudo", "systemd-cryptenroll",
                  "--tpm2-device=auto",
                  "--tpm2-pcrs=0+7",
+                 "--unlock-key-file=/dev/stdin",
                  dev],
-                input=passphrase + "\n",
+                input=passphrase,
                 capture_output=True,
                 text=True,
             )
             if r.returncode != 0:
                 raise RuntimeError(f"Enrollment failed for {dev}: {r.stderr.strip()}")
+            log(f"[TPM2] {dev} enrolled successfully")
             enrolled.append(dev)
 
+        log("[TPM2] running update-initramfs (this may take several minutes)")
         subprocess.run(
             ["sudo", "update-initramfs", "-u", "-k", "all"],
             check=True, capture_output=True
         )
+        log("[TPM2] update-initramfs done")
 
         return ApplyResult(True, f"TPM2 enrolled for {', '.join(enrolled)}, initramfs updated")
 

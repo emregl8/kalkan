@@ -4,9 +4,30 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gdk
 
 from modules import ALL_MODULES
-from core.models import ModuleStatus
+from core.models import ModuleStatus, ScanResult
 from core.logger import log, log_separator
 from .module_row import ModuleRow
+
+
+def _run_with_timeout(fn, timeout=20):
+    result_holder = [None]
+    exc_holder = [None]
+
+    def target():
+        try:
+            result_holder[0] = fn()
+        except Exception as e:
+            exc_holder[0] = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    if t.is_alive():
+        raise TimeoutError("operation timed out")
+    if exc_holder[0] is not None:
+        raise exc_holder[0]
+    return result_holder[0]
 
 _CSS = b"""
 .badge-active {
@@ -127,9 +148,8 @@ class MainWindow(Gtk.ApplicationWindow):
             log_separator("SCAN")
             for row in self._rows:
                 try:
-                    result = row.module.scan()
+                    result = _run_with_timeout(row.module.scan)
                 except Exception as e:
-                    from core.models import ScanResult
                     result = ScanResult(ModuleStatus.ERROR, str(e))
                 log(f"[{row.module.display_name}] {result.label} - {result.detail}")
                 GLib.idle_add(row.update_status, result)
@@ -167,18 +187,16 @@ class MainWindow(Gtk.ApplicationWindow):
                     log(f"[FAIL] {row.module.display_name}: {e}")
 
                 try:
-                    verified = row.module.verify()
+                    verified = _run_with_timeout(row.module.verify)
                 except Exception as e:
-                    from core.models import ScanResult
                     verified = ScanResult(ModuleStatus.ERROR, str(e))
                 GLib.idle_add(row.update_status, verified)
 
             for row in self._rows:
                 if row not in selected:
                     try:
-                        verified = row.module.verify()
+                        verified = _run_with_timeout(row.module.verify)
                     except Exception as e:
-                        from core.models import ScanResult
                         verified = ScanResult(ModuleStatus.ERROR, str(e))
                     GLib.idle_add(row.update_status, verified)
 
