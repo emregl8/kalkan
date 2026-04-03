@@ -1,3 +1,5 @@
+import ctypes
+import ctypes.util
 import os
 import subprocess
 
@@ -14,6 +16,16 @@ from core.logger import log
 
 CRYPTTAB = "/etc/crypttab"
 CLEVIS_PKGS = ["clevis", "clevis-luks", "clevis-tpm2", "clevis-initramfs"]
+_BIND_HELPER = os.path.join(os.path.dirname(__file__), "clevis_bind_helper")
+_TPM2_CONFIG = '{"pcr_bank":"sha256","pcr_ids":"0,4,7"}'
+
+_libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+
+
+def _zero_passphrase(buf: bytearray) -> None:
+    if buf:
+        addr = ctypes.addressof(ctypes.c_char.from_buffer(buf))
+        _libc.explicit_bzero(ctypes.cast(addr, ctypes.c_void_p), len(buf))
 
 
 def _read_crypttab() -> str:
@@ -167,6 +179,9 @@ class TPMUnlockModule(SecurityModule):
         if len(passphrase) == 0:
             return ApplyResult(False, "Passphrase cannot be empty")
 
+        if not os.path.isfile(_BIND_HELPER):
+            return ApplyResult(False, f"Helper binary not found: {_BIND_HELPER} — run 'make build'")
+
         bound = []
         errors = []
         try:
@@ -177,22 +192,19 @@ class TPMUnlockModule(SecurityModule):
                     continue
                 log(f"[TPM2] binding {dev} with clevis tpm2")
                 r = subprocess.run(
-                    ["sudo", "clevis", "luks", "bind",
-                     "-d", dev,
-                     "tpm2", '{"pcr_bank":"sha256","pcr_ids":"0,4,7"}'],
-                    input=passphrase.decode() + "\n",
+                    [_BIND_HELPER, dev, _TPM2_CONFIG],
+                    input=bytes(passphrase) + b"\n",
                     capture_output=True,
-                    text=True,
                 )
                 if r.returncode != 0:
-                    log(f"[TPM2] bind failed for {dev}: {r.stderr.strip()}")
-                    errors.append(f"{dev}: {r.stderr.strip()}")
+                    msg = r.stderr.decode(errors="replace").strip()
+                    log(f"[TPM2] bind failed for {dev}: {msg}")
+                    errors.append(f"{dev}: {msg}")
                     continue
                 log(f"[TPM2] {dev} bound successfully")
                 bound.append(dev)
         finally:
-            for i in range(len(passphrase)):
-                passphrase[i] = 0
+            _zero_passphrase(passphrase)
 
         if errors and not bound:
             return ApplyResult(False, f"Bind failed: {'; '.join(errors)}")
