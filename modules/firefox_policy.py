@@ -84,13 +84,13 @@ def _build_policy(remember_history: bool, allowed_extensions: set[str]) -> dict:
     policy = copy.deepcopy(_BASE_POLICY)
 
     policy["SanitizeOnShutdown"] = {
-        "Cache": True,
-        "Cookies": True,
+        "Cache": not remember_history,
+        "Cookies": not remember_history,
         "History": not remember_history,
         "Sessions": False,
-        "FormData": True,
+        "FormData": not remember_history,
         "DownloadHistory": not remember_history,
-        "OfflineApps": True,
+        "OfflineApps": not remember_history,
         "Locked": True,
     }
 
