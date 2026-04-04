@@ -9,6 +9,7 @@ from .rsyslog import RsyslogModule
 from .sysctl_hardening import SysctlHardeningModule
 from .ssh_hardening import SSHHardeningModule
 from .auditd import AuditdModule
+from .grub_password import GRUBPasswordModule
 
 ALL_MODULES = [
     UFWModule,
@@ -22,4 +23,5 @@ ALL_MODULES = [
     SysctlHardeningModule,
     SSHHardeningModule,
     AuditdModule,
+    GRUBPasswordModule,
 ]
