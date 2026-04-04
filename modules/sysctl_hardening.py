@@ -1,13 +1,15 @@
+import os
 import re
 import subprocess
 from .base import SecurityModule
 from core.models import ScanResult, ApplyResult, ModuleStatus
-from core.priv import sudo_write, sudo_chown, sudo_chmod, sudo_read
+from core.priv import sudo_write, sudo_chown, sudo_chmod, sudo_read, sudo_remove, sudo_exists
 from core.backup import ensure_backup
 
 _SYSCTL_CONF = "/etc/sysctl.conf"
 
-CONF_FILE = "/etc/sysctl.d/99-kalkan-hardening.conf"
+CONF_FILE     = "/etc/sysctl.d/zzz-kalkan-hardening.conf"
+_CONF_FILE_OLD = "/etc/sysctl.d/99-kalkan-hardening.conf"
 
 _PARAMS = {
     "kernel.randomize_va_space":                   "2",
@@ -87,7 +89,6 @@ class SysctlHardeningModule(SecurityModule):
             if _read_current(k) not in (v, None)
         ]
 
-        import os
         if not os.path.exists(CONF_FILE):
             return ScanResult(ModuleStatus.NOT_APPLIED, "Config not deployed")
 
@@ -98,6 +99,9 @@ class SysctlHardeningModule(SecurityModule):
         return ScanResult(ModuleStatus.APPLIED, f"All {len(_PARAMS)} parameters active")
 
     def apply(self) -> ApplyResult:
+        if sudo_exists(_CONF_FILE_OLD):
+            sudo_remove(_CONF_FILE_OLD)
+
         ensure_backup(CONF_FILE)
         sudo_write(CONF_FILE, _CONF)
         sudo_chown(CONF_FILE, 0, 0)
