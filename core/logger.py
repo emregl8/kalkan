@@ -6,7 +6,8 @@ os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 
 def init_log() -> None:
-    open(LOG_FILE, "w").close()
+    fd = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.close(fd)
 
 
 def log(message: str) -> None:
