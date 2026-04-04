@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.util
 import os
+import re
 import subprocess
 
 import threading
@@ -48,7 +49,10 @@ def _get_luks_devices() -> list[str]:
             continue
         dev = parts[1]
         if dev.startswith("UUID="):
-            uuid_path = f"/dev/disk/by-uuid/{dev[5:]}"
+            uuid = dev[5:]
+            if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", uuid):
+                continue
+            uuid_path = f"/dev/disk/by-uuid/{uuid}"
             if os.path.exists(uuid_path):
                 devices.append(os.path.realpath(uuid_path))
         elif os.path.exists(dev):
