@@ -21,6 +21,7 @@ A GNOME application for hardening Debian 13 Trixie. On launch, it scans the curr
 | **Kernel Sysctl** | Hardens kernel parameters: ASLR, ptrace scope, network stack, filesystem protections |
 | **SSH Hardening** | Deploys a drop-in sshd config: disables password auth (only if authorized_keys exists), root login, X11/TCP/agent forwarding. Validates config before restarting sshd. |
 | **auditd** | Deploys kernel-level audit rules: monitors auth files, sudo, SSH config, kernel modules, cron, network, login events, privilege escalation, and unauthorized access attempts |
+| **GRUB Boot Password** | Protects the GRUB menu with a PBKDF2-SHA512 password. Default boot entry remains unrestricted; recovery mode and GRUB shell require the password. `grub.cfg` is locked to 600 to protect the hash. |
 
 ## How it works
 
@@ -38,9 +39,11 @@ Kalkan scans the system on startup and reports the state of each module: **Activ
 - Python 3.12+
 - GNOME / GTK 4.0
 - `python3-gi`, `gir1.2-gtk-4.0`
+- `libgtk-4-dev`, `libssl-dev`, `pkg-config` (for building C helpers)
 
 ```
-make deps   # install dependencies
+make deps   # install runtime dependencies
+make build  # compile C helpers (installs build dependencies automatically)
 make        # run
 ```
 
